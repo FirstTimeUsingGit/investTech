@@ -1,7 +1,13 @@
 import "server-only";
 
 import { HTTP_BASE } from "./constants";
-import { getClient, getSession, saveSession, type TokenRecord } from "./store";
+import {
+  getClient,
+  getSession,
+  saveSession,
+  type OAuthClientRecord,
+  type TokenRecord,
+} from "./store";
 import { refreshTokens } from "./oauth";
 
 const SKEW_MS = 60_000;
@@ -10,8 +16,14 @@ export async function getValidAccessToken(sid: string): Promise<{
   accessToken: string;
   clientId: string;
 } | null> {
-  const session = await getSession(sid);
-  const client = await getClient();
+  let session: TokenRecord | null;
+  let client: OAuthClientRecord | null;
+  try {
+    session = await getSession(sid);
+    client = await getClient();
+  } catch {
+    return null;
+  }
   if (!session || !client) return null;
   if (session.accessExpiresAt - SKEW_MS > Date.now() && session.accessToken) {
     return { accessToken: session.accessToken, clientId: client.clientId };
@@ -28,7 +40,11 @@ export async function getValidAccessToken(sid: string): Promise<{
       scope: next.scope,
       updatedAt: Date.now(),
     };
-    await saveSession(sid, record);
+    try {
+      await saveSession(sid, record);
+    } catch {
+      // Keep using the refreshed token in-memory even if disk persist fails.
+    }
     return { accessToken: record.accessToken, clientId: client.clientId };
   } catch {
     return null;

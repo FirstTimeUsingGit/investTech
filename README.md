@@ -33,7 +33,7 @@ npm run dev
 
 - 用 OAuth 2.0 + PKCE（公開客戶端，冇 App Secret）。
 - 只申請行情相關權限（報價、訂閱、靜態資料）。**唔會申請交易／落盤權限。**
-- Refresh token 只存在伺服器磁碟（`.data/`），唔會傳到瀏覽器。
+- Refresh token 只存在伺服器（本機預設 `.data/`；Vercel 等唯讀檔案系統用 `/tmp` 同記憶體）。OAuth 進行中嘅狀態放 httpOnly cookie，唔會傳到頁面 Javascript。檔案寫唔入亦唔會令搜尋／三個價當機。
 - 授權畫面如果出現交易權限，請取消剔。
 - 解除連接之後會自動返 Yahoo 延遲行情。
 

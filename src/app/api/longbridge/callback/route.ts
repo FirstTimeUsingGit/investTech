@@ -2,7 +2,8 @@ import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { OAUTH_STATE_COOKIE, SID_COOKIE } from "@/lib/longbridge/constants";
 import { exchangeCode, publicOriginFromHeaders, safeReturnTo } from "@/lib/longbridge/oauth";
-import { getClient, saveSession, takePending } from "@/lib/longbridge/store";
+import { parseOAuthPending } from "@/lib/longbridge/oauth-pending";
+import { getClient, saveClient, saveSession, takePending } from "@/lib/longbridge/store";
 
 export const dynamic = "force-dynamic";
 
@@ -29,17 +30,50 @@ export async function GET(req: NextRequest) {
 
   const code = req.nextUrl.searchParams.get("code");
   const state = req.nextUrl.searchParams.get("state");
-  const cookieState = req.cookies.get(OAUTH_STATE_COOKIE)?.value;
+  const rawCookie = req.cookies.get(OAUTH_STATE_COOKIE)?.value;
+  const pendingCookie = parseOAuthPending(rawCookie);
+  const cookieState = pendingCookie?.state ?? rawCookie;
   if (!code || !state || !cookieState || cookieState !== state) {
     return fail("授權狀態唔啱，請再撳一次連接。");
   }
 
-  const pending = await takePending(state);
+  let pending = pendingCookie
+    ? {
+        verifier: pendingCookie.verifier,
+        redirectUri: pendingCookie.redirectUri,
+        returnTo: pendingCookie.returnTo,
+        createdAt: pendingCookie.createdAt,
+      }
+    : null;
+  if (!pending) {
+    try {
+      pending = await takePending(state);
+    } catch {
+      pending = null;
+    }
+  }
   if (!pending) {
     return fail("授權逾時，請再撳一次連接。");
   }
 
-  const client = await getClient();
+  let client = null;
+  try {
+    client = await getClient();
+  } catch {
+    client = null;
+  }
+  if (!client && pendingCookie?.clientId) {
+    client = {
+      clientId: pendingCookie.clientId,
+      redirectUris: [pendingCookie.redirectUri],
+      registeredAt: pendingCookie.createdAt,
+    };
+    try {
+      await saveClient(client);
+    } catch {
+      // in-memory /tmp persist is best-effort
+    }
+  }
   if (!client) {
     return fail("未登記 OAuth 客戶端，請再試。", pending.returnTo);
   }
@@ -52,13 +86,17 @@ export async function GET(req: NextRequest) {
       verifier: pending.verifier,
     });
     const sessionId = sid();
-    await saveSession(sessionId, {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      accessExpiresAt: Date.now() + tokens.expiresIn * 1000,
-      scope: tokens.scope,
-      updatedAt: Date.now(),
-    });
+    try {
+      await saveSession(sessionId, {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        accessExpiresAt: Date.now() + tokens.expiresIn * 1000,
+        scope: tokens.scope,
+        updatedAt: Date.now(),
+      });
+    } catch {
+      return fail("呢個雲端環境唔可以儲存 Longbridge 登入狀態，繼續用延遲行情。", pending.returnTo);
+    }
     const dest = new URL(safeReturnTo(pending.returnTo), origin);
     dest.searchParams.set("lb", "connected");
     const res = NextResponse.redirect(dest);

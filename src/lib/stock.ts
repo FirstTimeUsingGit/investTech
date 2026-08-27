@@ -36,13 +36,20 @@ export async function getStockPayload(
 
 async function loadPreferredQuoteAndBars(symbol: string, sessionId?: string | null) {
   if (sessionId) {
-    const creds = await getValidAccessToken(sessionId);
-    if (creds) {
-      try {
-        return await loadLongbridgeQuoteAndBars(symbol, creds.accessToken, creds.clientId);
-      } catch (err) {
-        console.warn("[longbridge] falling back to Yahoo:", err instanceof Error ? err.message : err);
+    try {
+      const creds = await getValidAccessToken(sessionId);
+      if (creds) {
+        try {
+          return await loadLongbridgeQuoteAndBars(symbol, creds.accessToken, creds.clientId);
+        } catch (err) {
+          console.warn("[longbridge] falling back to Yahoo:", err instanceof Error ? err.message : err);
+        }
       }
+    } catch (err) {
+      console.warn(
+        "[longbridge] session unavailable, using Yahoo:",
+        err instanceof Error ? err.message : err,
+      );
     }
   }
   return loadQuoteAndBars(symbol);
