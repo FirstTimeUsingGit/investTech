@@ -74,6 +74,18 @@ export function formatDateZh(iso: string): string {
   return `${y}年${Number(m)}月${Number(d)}日`;
 }
 
+export function formatQuoteTime(unix: number, timeZone: string): string {
+  if (!unix) return "";
+  return new Intl.DateTimeFormat("zh-HK", {
+    timeZone,
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(unix * 1000));
+}
+
 export function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }

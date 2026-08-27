@@ -70,8 +70,8 @@ export function ConnectLongbridge() {
           </PopoverTrigger>
           <PopoverContent align="end" className="w-64">
             <p className="text-sm leading-relaxed">
-              而家用 Longbridge 即時港股／美股報價同日K，計三個價。呢個 app
-              唔會睇戶口、亦唔會幫你落單。
+              而家用 Longbridge 即時港股／美股報價同日K，計三個價。美股現價會跟盤前、盤中、盤後同夜盤最新一筆。呢個
+              app 唔會睇戶口、亦唔會幫你落單。
             </p>
             <Button variant="outline" size="sm" disabled={busy} onClick={() => void disconnect()}>
               解除連接
