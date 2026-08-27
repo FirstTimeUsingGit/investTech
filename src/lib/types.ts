@@ -1,5 +1,8 @@
 export type Market = "HK" | "US";
 
+/** Live quote session. HK only uses regular; US may be pre/regular/post/overnight. */
+export type QuoteSession = "pre" | "regular" | "post" | "overnight";
+
 export type Bar = {
   time: number;
   date: string;
@@ -31,6 +34,10 @@ export type Quote = {
   timezone: string;
   delayed: boolean;
   source: "yahoo" | "longbridge";
+  /** Which session the headline price came from. Yahoo delayed quotes leave this unset. */
+  session?: QuoteSession | null;
+  sessionAt?: number | null;
+  sessionNote?: string | null;
 };
 
 export type SearchHit = {

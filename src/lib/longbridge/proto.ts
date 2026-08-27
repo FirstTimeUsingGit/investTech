@@ -46,8 +46,20 @@ export function encodeBytes(field: number, value: Uint8Array): Uint8Array {
   return concatBytes(encodeKey(field, 2), encodeVarintNumber(value.length), value);
 }
 
+/** protobuf map<string,string> as repeated message { key=1; value=2 }. */
+export function encodeStringMap(field: number, map: Record<string, string>): Uint8Array {
+  return concatBytes(
+    ...Object.entries(map).map(([key, value]) =>
+      encodeBytes(field, concatBytes(encodeString(1, key), encodeString(2, value))),
+    ),
+  );
+}
+
+/** Overnight quotes need AuthRequest.metadata need_over_night_quote=true (FAQ Q6). */
+export const OVERNIGHT_AUTH_METADATA = { need_over_night_quote: "true" } as const;
+
 export function encodeAuthRequest(token: string): Uint8Array {
-  return encodeString(1, token);
+  return concatBytes(encodeString(1, token), encodeStringMap(2, OVERNIGHT_AUTH_METADATA));
 }
 
 export function encodeMultiSecurity(symbols: string[]): Uint8Array {
@@ -65,6 +77,7 @@ export function encodeCandlestickRequest(opts: {
     encodeInt(2, opts.period),
     encodeInt(3, opts.count),
     encodeInt(4, opts.adjustType),
+    // Omit trade_session (field 5) so daily bars stay regular-session.
   );
 }
 
@@ -165,6 +178,16 @@ export function decodeAuthResponse(buf: Uint8Array): { sessionId: string; expire
   return { sessionId: fieldString(f, 1), expires: fieldInt(f, 2) };
 }
 
+export type LbSessionQuote = {
+  lastDone: number;
+  timestamp: number;
+  volume: number;
+  turnover: number;
+  high: number;
+  low: number;
+  prevClose: number;
+};
+
 export type LbQuote = {
   symbol: string;
   lastDone: number;
@@ -175,11 +198,32 @@ export type LbQuote = {
   timestamp: number;
   volume: number;
   turnover: number;
+  /** SecurityQuote.pre_market_quote = 11 */
+  preMarket: LbSessionQuote | null;
+  /** SecurityQuote.post_market_quote = 12 */
+  postMarket: LbSessionQuote | null;
+  /** SecurityQuote.over_night_quote = 13 (docs snippet omits this; github proto has it) */
+  overNight: LbSessionQuote | null;
 };
 
 function num(s: string): number {
   const n = Number(s);
   return Number.isFinite(n) ? n : 0;
+}
+
+function decodePrePostQuote(fields: Map<number, ProtoValue[]> | undefined): LbSessionQuote | null {
+  if (!fields) return null;
+  const lastDone = num(fieldString(fields, 1));
+  if (!(lastDone > 0)) return null;
+  return {
+    lastDone,
+    timestamp: fieldInt(fields, 2),
+    volume: fieldInt(fields, 3),
+    turnover: num(fieldString(fields, 4)),
+    high: num(fieldString(fields, 5)),
+    low: num(fieldString(fields, 6)),
+    prevClose: num(fieldString(fields, 7)),
+  };
 }
 
 export function decodeQuoteResponse(buf: Uint8Array): LbQuote[] {
@@ -194,6 +238,9 @@ export function decodeQuoteResponse(buf: Uint8Array): LbQuote[] {
     timestamp: fieldInt(q, 7),
     volume: fieldInt(q, 8),
     turnover: num(fieldString(q, 9)),
+    preMarket: decodePrePostQuote(fieldMessages(q, 11)[0]),
+    postMarket: decodePrePostQuote(fieldMessages(q, 12)[0]),
+    overNight: decodePrePostQuote(fieldMessages(q, 13)[0]),
   }));
 }
 

@@ -1,10 +1,15 @@
 import { formatCompact, formatNumber, formatPercent, formatPrice } from "@/lib/format";
 import { GlossaryTerm } from "@/components/glossary-term";
+import { SESSION_LABEL_ZH } from "@/lib/quote-session";
 import type { Quote, TradePlan } from "@/lib/types";
 
 export function StatsRow({ quote, plan }: { quote: Quote; plan: TradePlan }) {
+  const priceLabel =
+    quote.source === "longbridge" && quote.session
+      ? `現價（${SESSION_LABEL_ZH[quote.session]}）`
+      : "現價";
   const items = [
-    { label: "現價", value: formatPrice(quote.price, quote.currency) },
+    { label: priceLabel, value: formatPrice(quote.price, quote.currency) },
     { label: "今日升跌", value: formatPercent(quote.changePercent) },
     { label: "MA20", value: formatPrice(plan.stats.ma20), term: "ma20" },
     { label: "MA50", value: formatPrice(plan.stats.ma50), term: "ma50" },

@@ -2,12 +2,13 @@ import "server-only";
 
 import { unixToDate } from "@/lib/format";
 import { friendlyName } from "@/lib/names";
+import { pickHeadlineQuote } from "@/lib/quote-session";
 import { inferMarket } from "@/lib/ticker";
 import type { Bar, Quote } from "@/lib/types";
 import { getSocketOtp } from "./http";
 import { QuoteWsClient, withQuoteClient } from "./quote-ws";
 import { exchangeTimezone, toLongbridgeSymbol } from "./symbols";
-import type { LbCandle, LbStatic } from "./proto";
+import type { LbCandle, LbQuote, LbStatic } from "./proto";
 
 export async function loadLongbridgeQuoteAndBars(
   yahooSymbol: string,
@@ -28,9 +29,6 @@ export async function loadLongbridgeQuoteAndBars(
         loadCandles(client, lbSymbol),
       ]);
       const q = quotes[0];
-      if (!q || !q.lastDone) {
-        throw new Error("Longbridge 冇呢隻即時報價");
-      }
       if (candles.length < 40) {
         throw new Error("Longbridge 歷史K線不夠");
       }
@@ -42,8 +40,21 @@ export async function loadLongbridgeQuoteAndBars(
       const year = bars.slice(-252);
       const highs = year.map((b) => b.high);
       const lows = year.map((b) => b.low);
-      const price = q.lastDone;
-      const prev = q.prevClose || (bars.length > 1 ? bars[bars.length - 2].close : null);
+      const headline = pickHeadlineQuote({
+        market,
+        regular: regularPrint(q),
+        pre: q?.preMarket,
+        post: q?.postMarket,
+        overnight: q?.overNight,
+      });
+      if (!headline) {
+        throw new Error("Longbridge 冇呢隻即時報價");
+      }
+      const price = headline.print.lastDone;
+      const prev =
+        headline.print.prevClose ||
+        q?.prevClose ||
+        (bars.length > 1 ? bars[bars.length - 2].close : null);
       const change = prev != null ? price - prev : null;
       const changePercent = prev ? (change! / prev) * 100 : null;
       const names = pickNames(yahooSymbol, info);
@@ -53,6 +64,7 @@ export async function loadLongbridgeQuoteAndBars(
           : null;
       const marketCap =
         info?.totalShares && info.totalShares > 0 ? info.totalShares * price : null;
+      const useDailyRange = headline.session === "regular";
       const quote: Quote = {
         symbol: yahooSymbol,
         name: names.name,
@@ -64,9 +76,9 @@ export async function loadLongbridgeQuoteAndBars(
         previousClose: prev,
         change,
         changePercent,
-        dayHigh: q.high || last.high,
-        dayLow: q.low || last.low,
-        volume: q.volume || last.volume,
+        dayHigh: headline.print.high || (useDailyRange ? last.high : null),
+        dayLow: headline.print.low || (useDailyRange ? last.low : null),
+        volume: headline.print.volume || (useDailyRange ? last.volume : headline.print.volume),
         marketCap,
         peTrailing: pe,
         fiftyTwoWeekHigh: highs.length ? Math.max(...highs) : null,
@@ -74,6 +86,9 @@ export async function loadLongbridgeQuoteAndBars(
         timezone: tz,
         delayed: false,
         source: "longbridge",
+        session: headline.session,
+        sessionAt: headline.print.timestamp || null,
+        sessionNote: headline.sessionNote,
       };
       return { quote, bars };
     },
@@ -117,6 +132,17 @@ function candlesToBars(candles: LbCandle[], tz: string): Bar[] {
     });
   }
   return bars;
+}
+
+function regularPrint(q?: LbQuote) {
+  return {
+    lastDone: q?.lastDone ?? 0,
+    timestamp: q?.timestamp ?? 0,
+    volume: q?.volume ?? 0,
+    high: q?.high ?? 0,
+    low: q?.low ?? 0,
+    prevClose: q?.prevClose ?? 0,
+  };
 }
 
 function pickNames(yahooSymbol: string, info?: LbStatic): { name: string; nameEn: string } {

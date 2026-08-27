@@ -6,10 +6,13 @@ import {
   decodeFields,
   decodeQuoteResponse,
   encodeAuthRequest,
+  encodeBytes,
   encodeCandlestickRequest,
+  encodeInt,
   encodeMultiSecurity,
   encodeString,
   fieldInt,
+  fieldMessages,
   fieldString,
 } from "./longbridge/proto";
 import { packRequest, unpackPacket } from "./longbridge/packet";
@@ -40,6 +43,13 @@ describe("protobuf helpers", () => {
     expect(decoded.sessionId).toBe("otp-token");
   });
 
+  it("asks for overnight quotes in AuthRequest metadata", () => {
+    const body = encodeAuthRequest("otp-token");
+    const meta = fieldMessages(decodeFields(body), 2)[0];
+    expect(fieldString(meta, 1)).toBe("need_over_night_quote");
+    expect(fieldString(meta, 2)).toBe("true");
+  });
+
   it("encodes symbol lists", () => {
     const body = encodeMultiSecurity(["700.HK", "AAPL.US"]);
     const fields = decodeFields(body);
@@ -56,6 +66,30 @@ describe("protobuf helpers", () => {
     expect(quotes[0]?.symbol).toBe("700.HK");
     expect(quotes[0]?.lastDone).toBe(338);
     expect(quotes[0]?.prevClose).toBe(334.8);
+    expect(quotes[0]?.preMarket).toBeNull();
+    expect(quotes[0]?.postMarket).toBeNull();
+    expect(quotes[0]?.overNight).toBeNull();
+  });
+
+  it("decodes US pre, post and overnight nested quotes", () => {
+    const pre = encodePrePost({ lastDone: "155.880", timestamp: 1651066201, high: "158.400", low: "155.100", prevClose: "156.800" });
+    const post = encodePrePost({ lastDone: "158.770", timestamp: 1651103995, high: "159.400", low: "156.400", prevClose: "156.570" });
+    const overnight = encodePrePost({ lastDone: "159.100", timestamp: 1651120000, high: "159.500", low: "157.000", prevClose: "158.770" });
+    const inner = concatForTest(
+      encodeString(1, "AAPL.US"),
+      encodeString(2, "156.570"),
+      encodeString(3, "156.800"),
+      encodeInt(7, 1651089600),
+      encodeBytes(11, pre),
+      encodeBytes(12, post),
+      encodeBytes(13, overnight),
+    );
+    const quotes = decodeQuoteResponse(encodeLengthDelimited(1, inner));
+    expect(quotes[0]?.symbol).toBe("AAPL.US");
+    expect(quotes[0]?.lastDone).toBe(156.57);
+    expect(quotes[0]?.preMarket).toMatchObject({ lastDone: 155.88, timestamp: 1651066201 });
+    expect(quotes[0]?.postMarket).toMatchObject({ lastDone: 158.77, timestamp: 1651103995 });
+    expect(quotes[0]?.overNight).toMatchObject({ lastDone: 159.1, timestamp: 1651120000 });
   });
 
   it("decodes candlesticks", () => {
@@ -83,6 +117,7 @@ describe("protobuf helpers", () => {
     expect(fieldString(fields, 1)).toBe("AAPL.US");
     expect(fieldInt(fields, 2)).toBe(1000);
     expect(fieldInt(fields, 3)).toBe(1000);
+    expect(fields.get(5)).toBeUndefined();
   });
 });
 
@@ -103,6 +138,33 @@ describe("quote packets", () => {
     expect(ures.requestId).toBe(7);
   });
 });
+
+function encodePrePost(opts: {
+  lastDone: string;
+  timestamp: number;
+  high?: string;
+  low?: string;
+  prevClose?: string;
+}): Uint8Array {
+  return concatForTest(
+    encodeString(1, opts.lastDone),
+    encodeInt(2, opts.timestamp),
+    encodeString(5, opts.high ?? ""),
+    encodeString(6, opts.low ?? ""),
+    encodeString(7, opts.prevClose ?? ""),
+  );
+}
+
+function concatForTest(...chunks: Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const c of chunks) {
+    out.set(c, o);
+    o += c.length;
+  }
+  return out;
+}
 
 function encodeLengthDelimited(field: number, value: Uint8Array): Uint8Array {
   const key = encodeVarintForTest((field << 3) | 2);

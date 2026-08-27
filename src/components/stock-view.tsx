@@ -10,7 +10,8 @@ import { Disclaimer } from "@/components/disclaimer";
 import { SearchBox } from "@/components/search-box";
 import { Badge } from "@/components/ui/badge";
 import { GlossaryTerm } from "@/components/glossary-term";
-import { formatDateZh, formatPercent, formatPrice } from "@/lib/format";
+import { formatDateZh, formatPercent, formatPrice, formatQuoteTime } from "@/lib/format";
+import { SESSION_LABEL_ZH } from "@/lib/quote-session";
 import type { StockPayload } from "@/lib/types";
 
 export function StockError({ message }: { message: string }) {
@@ -55,14 +56,27 @@ export function StockView({ data }: { data: StockPayload }) {
             ) : (
               <Badge variant="outline">美股</Badge>
             )}
+            {quote.source === "longbridge" && quote.session ? (
+              <Badge variant="outline">{SESSION_LABEL_ZH[quote.session]}</Badge>
+            ) : null}
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
             {quote.nameEn !== quote.name ? `${quote.nameEn} · ` : null}
             現價 {formatPrice(quote.price, quote.currency)}{" "}
             <span className={up ? "text-target" : "text-stop"}>{formatPercent(quote.changePercent)}</span>
+            {quote.source === "longbridge" && quote.session ? (
+              <>
+                {" · "}
+                <GlossaryTerm id="session">{SESSION_LABEL_ZH[quote.session]}</GlossaryTerm>
+                {quote.sessionAt ? ` ${formatQuoteTime(quote.sessionAt, quote.timezone)}` : null}
+              </>
+            ) : null}
             {" · "}
             截至 {formatDateZh(analysis.stats.lastDate)}
           </p>
+          {quote.sessionNote ? (
+            <p className="mt-1 text-xs text-muted-foreground">{quote.sessionNote}</p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <WatchButton symbol={quote.symbol} name={quote.name} />
