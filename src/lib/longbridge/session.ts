@@ -12,8 +12,12 @@ export async function readSessionId(): Promise<string | undefined> {
 }
 
 export async function isLongbridgeConnected(sessionId?: string | null): Promise<boolean> {
-  const sid = sessionId ?? (await readSessionId());
-  if (!sid) return false;
-  const session = await getSession(sid);
-  return Boolean(session?.refreshToken);
+  try {
+    const sid = sessionId ?? (await readSessionId());
+    if (!sid) return false;
+    const session = await getSession(sid);
+    return Boolean(session?.refreshToken);
+  } catch {
+    return false;
+  }
 }
